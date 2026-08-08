@@ -576,6 +576,19 @@ def main():
         print("❌ مفيش TELEGRAM_TOKEN!")
         return
 
+    # ── نقفل أي جلسة getUpdates عالقة (من instance قديمة) قبل ما نبدأ ──
+    # ده بيمنع Conflict error لو فيه اتصال قديم لسه فاتح
+    import urllib.request as _ur
+    try:
+        delete_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook?drop_pending_updates=true"
+        with _ur.urlopen(delete_url, timeout=15) as resp:
+            print(f"🧹 تنظيف الجلسات القديمة: {resp.read().decode()[:200]}")
+    except Exception as e:
+        print(f"⚠️ فشل تنظيف الجلسات القديمة (مش مشكلة كبيرة): {e}")
+
+    # استنى ثانيتين كمان عشان أي instance قديمة تقفل تماماً
+    time.sleep(3)
+
     async def on_startup(app):
         # بيتنفذ بعد ما الـ event loop يبدأ فعلياً - هنا نمسك الـ loop الصح
         loop = asyncio.get_running_loop()
