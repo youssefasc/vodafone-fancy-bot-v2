@@ -590,6 +590,7 @@ def main():
     application.add_handler(CallbackQueryHandler(button_handler))
 
     print("🤖 البوت شغال...")
+    # ملحوظة: drop_pending_updates بيتجاهل أي updates قديمة متراكمة وقت الانقطاع
     application.run_polling(drop_pending_updates=True)
 
 
