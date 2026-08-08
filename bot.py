@@ -5,6 +5,7 @@ Vodafone Fancy Numbers Bot - v2
 import os
 import json
 import time
+import asyncio
 import threading
 from datetime import datetime, timezone
 from collections import Counter
@@ -320,7 +321,7 @@ def scrape_vodafone(log) -> dict:
 _scan_lock = threading.Lock()
 
 
-def run_scan(bot=None, manual=False, chat_id=None):
+def run_scan(bot=None, manual=False, chat_id=None, loop=None):
     """يفحص الموقع، يحدث الحالة، ويبعت رسالة تيليجرام"""
     if not _scan_lock.acquire(blocking=False):
         return {"error": "في فحص شغال بالفعل، استنى يخلص"}
@@ -395,7 +396,15 @@ def run_scan(bot=None, manual=False, chat_id=None):
                        f"مفيش أرقام مميزة جديدة دلوقتي.")
 
             try:
-                bot.send_message(chat_id=target_chat, text=msg, parse_mode="HTML")
+                if loop is not None:
+                    # bot.send_message async - لازم نستدعيها على الـ event loop الأساسي
+                    fut = asyncio.run_coroutine_threadsafe(
+                        bot.send_message(chat_id=target_chat, text=msg, parse_mode="HTML"),
+                        loop
+                    )
+                    fut.result(timeout=30)  # ننتظر التأكيد إن الرسالة اتبعتت فعلاً
+                else:
+                    log("⚠️ مفيش event loop متاح لإرسال الرسالة")
             except Exception as e:
                 log(f"⚠️ فشل إرسال الرسالة: {e}")
 
@@ -411,7 +420,7 @@ def run_scan(bot=None, manual=False, chat_id=None):
 # ═══════════════════════════════════════════════════════════
 # جدولة الفحص التلقائي (background thread)
 # ═══════════════════════════════════════════════════════════
-def scheduler_loop(application):
+def scheduler_loop(application, loop):
     while True:
         with state_lock:
             interval = state.get("interval_minutes", 10)
@@ -419,7 +428,7 @@ def scheduler_loop(application):
 
         if not paused:
             try:
-                run_scan(bot=application.bot, manual=False)
+                run_scan(bot=application.bot, manual=False, loop=loop)
             except Exception as e:
                 print(f"❌ خطأ في الفحص المجدول: {e}")
 
@@ -490,8 +499,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                             reply_markup=main_menu_keyboard())
             return
         await query.edit_message_text("🚀 بدأت الفحص... هياخد دقيقة لدقيقتين، هبعتلك النتيجة أول ما يخلص.")
+        current_loop = asyncio.get_running_loop()
         threading.Thread(target=run_scan, kwargs={
-            "bot": context.bot, "manual": True, "chat_id": chat_id
+            "bot": context.bot, "manual": True, "chat_id": chat_id, "loop": current_loop
         }, daemon=True).start()
 
     elif data == "last_result":
@@ -566,15 +576,18 @@ def main():
         print("❌ مفيش TELEGRAM_TOKEN!")
         return
 
-    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    async def on_startup(app):
+        # بيتنفذ بعد ما الـ event loop يبدأ فعلياً - هنا نمسك الـ loop الصح
+        loop = asyncio.get_running_loop()
+        scheduler_thread = threading.Thread(target=scheduler_loop, args=(app, loop), daemon=True)
+        scheduler_thread.start()
+        print("🕐 الجدولة التلقائية بدأت")
+
+    application = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(on_startup).build()
 
     application.add_handler(CommandHandler("start", cmd_start))
     application.add_handler(CommandHandler("menu", cmd_menu))
     application.add_handler(CallbackQueryHandler(button_handler))
-
-    # شغّل الجدولة التلقائية في thread منفصل
-    scheduler_thread = threading.Thread(target=scheduler_loop, args=(application,), daemon=True)
-    scheduler_thread.start()
 
     print("🤖 البوت شغال...")
     application.run_polling(drop_pending_updates=True)
