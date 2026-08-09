@@ -313,11 +313,24 @@ def scrape_numbers(page, line_type: str, log) -> list[dict]:
     close_cookie_banner(page)
 
     target = "text=Sim Card" if line_type == "simcard" else "text=eSim"
-    try:
-        page.click(target, timeout=10000, force=True)
-    except Exception:
-        close_cookie_banner(page)
-        page.click(target, timeout=10000, force=True)
+
+    clicked = False
+    last_error = None
+    for attempt in range(3):
+        try:
+            # نستنى العنصر يظهر فعلياً قبل ما نحاول نضغطه
+            page.wait_for_selector(target, timeout=20000, state="visible")
+            page.click(target, timeout=15000, force=True)
+            clicked = True
+            break
+        except Exception as e:
+            last_error = e
+            log(f"   ⚠️ محاولة {attempt + 1}/3 للضغط على {line_type} فشلت: {e}")
+            close_cookie_banner(page)
+            time.sleep(3)
+
+    if not clicked:
+        log(f"   ❌ مقدرتش أضغط على {line_type} بعد 3 محاولات، بكمل من غير تبديل النوع")
 
     time.sleep(2)
 
@@ -433,6 +446,7 @@ def scrape_numbers(page, line_type: str, log) -> list[dict]:
 
 def scrape_vodafone(log) -> dict:
     all_numbers = {"simcard": [], "esim": []}
+    error_occurred = None
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page(user_agent=(
@@ -441,21 +455,38 @@ def scrape_vodafone(log) -> dict:
             "Chrome/120.0.0.0 Safari/537.36"
         ))
         try:
-            page.goto(
-                "https://eshop.vodafone.com.eg/en/lines/red/numbers",
-                wait_until="networkidle",
-                timeout=60000
-            )
-            time.sleep(3)
+            # نحاول نفتح الصفحة لحد 3 مرات - الموقع أحياناً بيبقى بطيء
+            goto_success = False
+            last_error = None
+            for attempt in range(3):
+                try:
+                    log(f"🌐 بفتح الموقع (محاولة {attempt + 1}/3)...")
+                    page.goto(
+                        "https://eshop.vodafone.com.eg/en/lines/red/numbers",
+                        wait_until="domcontentloaded",  # أسرع وأضمن من networkidle
+                        timeout=90000
+                    )
+                    time.sleep(4)  # نديله وقت يحمل باقي المحتوى بعد الـ DOM
+                    goto_success = True
+                    break
+                except Exception as e:
+                    last_error = e
+                    log(f"⚠️ فشلت المحاولة {attempt + 1}: {e}")
+                    time.sleep(5)
+
+            if not goto_success:
+                raise last_error
+
             close_cookie_banner(page)
 
             for lt in ["simcard", "esim"]:
                 items = scrape_numbers(page, lt, log)
                 all_numbers[lt] = items
         except Exception as e:
+            error_occurred = str(e)
             log(f"❌ خطأ: {e}")
         browser.close()
-    return all_numbers
+    return all_numbers, error_occurred
 
 
 # ═══════════════════════════════════════════════════════════
@@ -480,7 +511,7 @@ def run_scan(bot=None, manual=False, chat_id=None, loop=None):
             logs.append(msg)
 
         log(f"🚀 بدأ الفحص {'(يدوي)' if manual else '(تلقائي)'}...")
-        all_numbers = scrape_vodafone(log)
+        all_numbers, scan_error = scrape_vodafone(log)
 
         with state_lock:
             seen = state.get("seen", {"simcard": [], "esim": []})
@@ -547,6 +578,15 @@ def run_scan(bot=None, manual=False, chat_id=None, loop=None):
 
                 current += "🔗 <a href='https://eshop.vodafone.com.eg/en/lines/red/numbers'>شوف واشتري هنا</a>"
                 messages.append(current)
+            elif scan_error and totals["simcard"] == 0 and totals["esim"] == 0:
+                # الفحص فشل تماماً (مش مجرد "مفيش أرقام مميزة") - نوضح ده للمستخدم
+                now_str = datetime.now(timezone.utc).strftime('%H:%M UTC')
+                messages.append(
+                    f"⚠️ فشل الفحص الساعة {now_str}\n\n"
+                    f"مقدرتش أفتح موقع فودافون أو أجيب الأرقام. الخطأ:\n"
+                    f"<code>{scan_error[:300]}</code>\n\n"
+                    f"غالباً مشكلة مؤقتة في الموقع - هحاول تاني في الفحص الجاي."
+                )
             else:
                 now_str = datetime.now(timezone.utc).strftime('%H:%M UTC')
                 messages.append(
