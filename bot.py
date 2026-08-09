@@ -489,10 +489,24 @@ STRANGER_MESSAGE = (
     "تواصل معايا من الزرار تحت 👇"
 )
 
+STRANGER_MESSAGE_NO_BUTTON = STRANGER_MESSAGE.replace(
+    "تواصل معايا من الزرار تحت 👇",
+    f"تواصل معايا مباشرة: (ID: {ADMIN_ID})"
+)
+
+
+async def reply_to_stranger(message):
+    """يرد على أي حد مش الأدمن، مع fallback لو زرار الـ deep link فشل"""
+    try:
+        await message.reply_text(STRANGER_MESSAGE, reply_markup=stranger_reply_keyboard())
+    except Exception:
+        # لو فشل الزرار (مثلاً بسبب خصوصية المستخدم) نبعت من غير زرار
+        await message.reply_text(STRANGER_MESSAGE_NO_BUTTON)
+
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text(STRANGER_MESSAGE, reply_markup=stranger_reply_keyboard())
+        await reply_to_stranger(update.message)
         return
     await update.message.reply_text(
         "👋 أهلاً! أنا بوت أرقام فودافون المميزة.\n\n"
@@ -600,7 +614,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text(STRANGER_MESSAGE, reply_markup=stranger_reply_keyboard())
+        await reply_to_stranger(update.message)
         return
     await update.message.reply_text("📋 لوحة التحكم:", reply_markup=main_menu_keyboard())
 
@@ -610,7 +624,7 @@ async def handle_any_message(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not update.message:
         return
     if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text(STRANGER_MESSAGE, reply_markup=stranger_reply_keyboard())
+        await reply_to_stranger(update.message)
         return
     # لو الأدمن كتب حاجة مش أمر، رجّعله لوحة التحكم
     await update.message.reply_text("📋 لوحة التحكم:", reply_markup=main_menu_keyboard())
