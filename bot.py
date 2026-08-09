@@ -333,7 +333,7 @@ def run_scan(bot=None, manual=False, chat_id=None, loop=None):
 
         logs = []
         def log(msg):
-            print(msg)
+            print(msg, flush=True)
             logs.append(msg)
 
         log(f"🚀 بدأ الفحص {'(يدوي)' if manual else '(تلقائي)'}...")
@@ -430,7 +430,7 @@ def scheduler_loop(application, loop):
             try:
                 run_scan(bot=application.bot, manual=False, loop=loop)
             except Exception as e:
-                print(f"❌ خطأ في الفحص المجدول: {e}")
+                print(f"❌ خطأ في الفحص المجدول: {e}", flush=True)
 
         # ننام لحد الفحص الجاي (نتأكد من الـ pause كل دقيقة عشان لو المستخدم غيّر الإعداد)
         remaining = interval * 60
@@ -573,7 +573,7 @@ async def cmd_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ═══════════════════════════════════════════════════════════
 def main():
     if not TELEGRAM_TOKEN:
-        print("❌ مفيش TELEGRAM_TOKEN!")
+        print("❌ مفيش TELEGRAM_TOKEN!", flush=True)
         return
 
     # ── نقفل أي جلسة getUpdates عالقة (من instance قديمة) قبل ما نبدأ ──
@@ -582,9 +582,9 @@ def main():
     try:
         delete_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook?drop_pending_updates=true"
         with _ur.urlopen(delete_url, timeout=15) as resp:
-            print(f"🧹 تنظيف الجلسات القديمة: {resp.read().decode()[:200]}")
+            print(f"🧹 تنظيف الجلسات القديمة: {resp.read().decode()[:200]}", flush=True)
     except Exception as e:
-        print(f"⚠️ فشل تنظيف الجلسات القديمة (مش مشكلة كبيرة): {e}")
+        print(f"⚠️ فشل تنظيف الجلسات القديمة (مش مشكلة كبيرة): {e}", flush=True)
 
     # استنى ثانيتين كمان عشان أي instance قديمة تقفل تماماً
     time.sleep(3)
@@ -594,7 +594,7 @@ def main():
         loop = asyncio.get_running_loop()
         scheduler_thread = threading.Thread(target=scheduler_loop, args=(app, loop), daemon=True)
         scheduler_thread.start()
-        print("🕐 الجدولة التلقائية بدأت")
+        print("🕐 الجدولة التلقائية بدأت", flush=True)
 
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(on_startup).build()
 
@@ -602,7 +602,7 @@ def main():
     application.add_handler(CommandHandler("menu", cmd_menu))
     application.add_handler(CallbackQueryHandler(button_handler))
 
-    print("🤖 البوت شغال...")
+    print("🤖 البوت شغال...", flush=True)
     # ملحوظة: drop_pending_updates بيتجاهل أي updates قديمة متراكمة وقت الانقطاع
     application.run_polling(drop_pending_updates=True)
 
