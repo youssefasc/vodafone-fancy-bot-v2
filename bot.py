@@ -61,64 +61,81 @@ state = load_state()
 def is_fancy(number: str) -> dict:
     d = number[-8:]
 
+    # 1. متكررة كلها: 11111111
     if len(set(d)) == 1:
         return {"fancy": True, "reason": "متكررة كلها 🔥"}
+
+    # 2. متسلسلة تصاعدي كاملة: 12345678
     if all(int(d[i]) - int(d[i-1]) == 1 for i in range(1, len(d))):
         return {"fancy": True, "reason": "متسلسلة تصاعدي ⬆️"}
+
+    # 3. متسلسلة تنازلي كاملة: 87654321
     if all(int(d[i-1]) - int(d[i]) == 1 for i in range(1, len(d))):
         return {"fancy": True, "reason": "متسلسلة تنازلي ⬇️"}
+
+    # 4. نصف الرقم زي النص التاني بالظبط: 12341234
     if d[:4] == d[4:]:
         return {"fancy": True, "reason": "نصف متكرر 🔁"}
+
+    # 5. أول 4 أرقام كلهم نفس الرقم: 11112345
     if len(set(d[:4])) == 1:
         return {"fancy": True, "reason": "أول 4 متكررة ✨"}
+
+    # 6. آخر 4 أرقام كلهم نفس الرقم: 12345555
     if len(set(d[4:])) == 1:
         return {"fancy": True, "reason": "آخر 4 متكررة ✨"}
+
+    # 7. آخر 3 أرقام كلهم نفس الرقم: 1700777 / 1800888
+    if len(set(d[-3:])) == 1:
+        return {"fancy": True, "reason": "آخر 3 متكررة 🔢"}
+
+    # 8. الرقم كله من رقمين بس متبادلين: 10101010
     if len(set(d)) <= 2:
         return {"fancy": True, "reason": "رقمين فريدين فقط 💎"}
-    if len(set(d)) <= 3 and d.count(d[0]) >= 4:
-        return {"fancy": True, "reason": "شبه متكرر ⭐"}
-    for tail_len in [4, 3]:
-        tail = d[-tail_len:]
-        if len(set(tail)) == 1:
-            return {"fancy": True, "reason": f"آخر {tail_len} متكررة 🔢"}
 
+    # ── أنماط المجموعات (لازم تكون مجموعات كاملة منظمة، مش صدفة) ──
     d6 = d[-6:]
     if len(d6) == 6:
         g1, g2 = int(d6[:3]), int(d6[3:])
         diff = g2 - g1
-        if diff != 0 and diff % 100 == 0 and g1 >= 0 and g2 >= 0:
+        # مجموعتين من 3 أرقام بفرق ثابت 100 بالظبط (700-600 / 100-200): تسلسل حقيقي
+        if diff != 0 and abs(diff) % 100 == 0 and g1 >= 0 and g2 >= 0:
             arrow = "⬆️" if diff > 0 else "⬇️"
             return {"fancy": True, "reason": f"مجموعتين متسلسلتين ({d6[:3]}-{d6[3:]}) {arrow}"}
+        # مجموعتين تضاعف بعض: 100-200 / 111-222
         if g1 > 0 and g2 == g1 * 2:
             return {"fancy": True, "reason": f"مجموعتين مضاعفة ({d6[:3]}-{d6[3:]}) ✖️"}
+        # مجموعتين متطابقتين بالظبط: 700-700
+        if g1 == g2 and g1 > 0:
+            return {"fancy": True, "reason": f"مجموعتين متطابقتين ({d6[:3]}-{d6[3:]}) 🔁"}
 
     d8 = d[-8:]
     if len(d8) == 8:
         g1, g2 = int(d8[:4]), int(d8[4:])
         diff = g2 - g1
-        if diff != 0 and diff % 1000 == 0 and g1 >= 0 and g2 >= 0:
+        if diff != 0 and abs(diff) % 1000 == 0 and g1 >= 0 and g2 >= 0:
             arrow = "⬆️" if diff > 0 else "⬇️"
             return {"fancy": True, "reason": f"مجموعتين متسلسلتين ({d8[:4]}-{d8[4:]}) {arrow}"}
 
+    # 3 مجموعات (3-3-2) بفرق ثابت بين أول مجموعتين: 700-600-50 / 200-300-40
     if len(d) == 8:
         g1, g2, g3 = d[0:3], d[3:6], d[6:8]
         n1, n2 = int(g1), int(g2)
         diff = n1 - n2
-        if diff != 0 and diff % 100 == 0:
+        if diff != 0 and abs(diff) % 100 == 0:
             return {"fancy": True, "reason": f"نمط ({g1}-{g2}-{g3}) 🎯"}
-        if g1 == g2:
-            return {"fancy": True, "reason": f"مجموعتين متطابقتين ({g1}-{g2}-{g3}) 🔁"}
 
-    pairs = [d[i:i+2] for i in range(0, 8, 2)]
-    if len(set(pairs)) <= 2:
-        return {"fancy": True, "reason": f"أزواج متكررة ({'-'.join(pairs)}) 🔂"}
-    pair_counts = Counter(pairs)
-    most_common_pair, freq = pair_counts.most_common(1)[0]
-    if freq >= 2 and most_common_pair != "":
-        return {"fancy": True, "reason": f"الزوج ({most_common_pair}) متكرر {freq} مرات 🔂"}
+    # مجموعات من رقمين متتالية تصاعدي/تنازلي بفرق ثابت: 20-30-40-50 / 10-20-30-40
+    quads = [d[i:i+2] for i in range(0, 8, 2)]
+    quad_nums = [int(q) for q in quads]
+    diffs = [quad_nums[i+1] - quad_nums[i] for i in range(3)]
+    if len(set(diffs)) == 1 and diffs[0] != 0 and abs(diffs[0]) % 10 == 0:
+        arrow = "⬆️" if diffs[0] > 0 else "⬇️"
+        return {"fancy": True, "reason": f"مجموعات متتالية ({'-'.join(quads)}) {arrow}"}
 
-    if d[-2:] == d[-4:-2]:
-        return {"fancy": True, "reason": f"آخر زوجين متطابقين ({d[-4:]}) 🔁"}
+    # مجموعات من رقمين متكررة بالكامل (كل الأربع مجموعات نفس القيمة): 70-70-70-70
+    if len(set(quads)) == 1:
+        return {"fancy": True, "reason": f"مجموعات متكررة ({'-'.join(quads)}) 🔁"}
 
     return {"fancy": False}
 
@@ -375,39 +392,56 @@ def run_scan(bot=None, manual=False, chat_id=None, loop=None):
             state["running"] = False
             save_state(state)
 
-        # ابعت رسالة تيليجرام
+        # ابعت رسالة/رسائل تيليجرام
         target_chat = chat_id or CHAT_ID
         if bot and target_chat:
             LINE_LABELS = {"simcard": "📱 SIM Card (200 EGP)", "esim": "💿 eSIM (350 EGP)"}
+            messages = []
+
             if has_new:
-                msg = "🌟 <b>أرقام مميزة جديدة على فودافون!</b>\n\n"
+                total_new = len(new_fancy["simcard"]) + len(new_fancy["esim"])
+                current = f"🌟 <b>أرقام مميزة جديدة على فودافون!</b> ({total_new} رقم)\n\n"
+
                 for lt in ["simcard", "esim"]:
-                    if new_fancy[lt]:
-                        msg += f"{LINE_LABELS[lt]}\n"
-                        for item in new_fancy[lt][:25]:  # حد أقصى عشان مايطولش
-                            msg += f"  ├ <code>{item['number']}</code> — {item['reason']}\n"
-                        if len(new_fancy[lt]) > 25:
-                            msg += f"  ... و{len(new_fancy[lt]) - 25} رقم كمان\n"
-                        msg += "\n"
-                msg += "🔗 <a href='https://eshop.vodafone.com.eg/en/lines/red/numbers'>شوف واشتري هنا</a>"
+                    if not new_fancy[lt]:
+                        continue
+                    section_header = f"{LINE_LABELS[lt]}\n"
+                    # لو إضافة الهيدر هتخلي الرسالة تقرب من الحد الأقصى، ابدأ رسالة جديدة
+                    if len(current) + len(section_header) > 3800:
+                        messages.append(current)
+                        current = ""
+                    current += section_header
+
+                    for item in new_fancy[lt]:
+                        line = f"  ├ <code>{item['number']}</code> — {item['reason']}\n"
+                        if len(current) + len(line) > 3800:
+                            messages.append(current)
+                            current = ""
+                        current += line
+                    current += "\n"
+
+                current += "🔗 <a href='https://eshop.vodafone.com.eg/en/lines/red/numbers'>شوف واشتري هنا</a>"
+                messages.append(current)
             else:
                 now_str = datetime.now(timezone.utc).strftime('%H:%M UTC')
-                msg = (f"🔍 فحص الساعة {now_str}\n"
-                       f"مفحوص: {totals['simcard']} SIM + {totals['esim']} eSIM\n"
-                       f"مفيش أرقام مميزة جديدة دلوقتي.")
+                messages.append(
+                    f"🔍 فحص الساعة {now_str}\n"
+                    f"مفحوص: {totals['simcard']} SIM + {totals['esim']} eSIM\n"
+                    f"مفيش أرقام مميزة جديدة دلوقتي."
+                )
 
-            try:
-                if loop is not None:
-                    # bot.send_message async - لازم نستدعيها على الـ event loop الأساسي
-                    fut = asyncio.run_coroutine_threadsafe(
-                        bot.send_message(chat_id=target_chat, text=msg, parse_mode="HTML"),
-                        loop
-                    )
-                    fut.result(timeout=30)  # ننتظر التأكيد إن الرسالة اتبعتت فعلاً
-                else:
-                    log("⚠️ مفيش event loop متاح لإرسال الرسالة")
-            except Exception as e:
-                log(f"⚠️ فشل إرسال الرسالة: {e}")
+            for i, msg in enumerate(messages):
+                try:
+                    if loop is not None:
+                        fut = asyncio.run_coroutine_threadsafe(
+                            bot.send_message(chat_id=target_chat, text=msg, parse_mode="HTML"),
+                            loop
+                        )
+                        fut.result(timeout=30)
+                    else:
+                        log("⚠️ مفيش event loop متاح لإرسال الرسالة")
+                except Exception as e:
+                    log(f"⚠️ فشل إرسال الرسالة {i+1}/{len(messages)}: {e}")
 
         return {"ok": True, "has_new": has_new, "totals": totals}
 
@@ -560,18 +594,37 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await safe_edit(query, "مفيش فحص اتعمل لسه.", reply_markup=main_menu_keyboard())
             return
         dt = datetime.fromisoformat(last_run)
-        msg = f"📊 <b>آخر فحص:</b> {dt.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
-        msg += f"📱 SIM Card: {result.get('simcard', 0)} رقم متفحوص\n"
-        msg += f"💿 eSIM: {result.get('esim', 0)} رقم متفحوص\n\n"
+        header = f"📊 <b>آخر فحص:</b> {dt.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
+        header += f"📱 SIM Card: {result.get('simcard', 0)} رقم متفحوص\n"
+        header += f"💿 eSIM: {result.get('esim', 0)} رقم متفحوص\n\n"
         fancy_sim = result.get("fancy_simcard", [])
         fancy_esim = result.get("fancy_esim", [])
-        if fancy_sim or fancy_esim:
-            msg += "🌟 آخر أرقام مميزة اتلقت:\n"
-            for item in (fancy_sim + fancy_esim)[:15]:
-                msg += f"  ├ <code>{item['number']}</code> — {item['reason']}\n"
-        else:
-            msg += "🔍 مفيش أرقام مميزة جديدة في آخر فحص."
-        await safe_edit(query, msg, parse_mode="HTML", reply_markup=main_menu_keyboard())
+        all_fancy = fancy_sim + fancy_esim
+
+        if not all_fancy:
+            await safe_edit(query, header + "🔍 مفيش أرقام مميزة جديدة في آخر فحص.",
+                             parse_mode="HTML", reply_markup=main_menu_keyboard())
+            return
+
+        # نبني الرسائل مقسمة لو العدد كبير (حد أقصى تيليجرام 4096 حرف)
+        messages = []
+        current = header + "🌟 آخر أرقام مميزة اتلقت:\n"
+        for item in all_fancy:
+            line = f"  ├ <code>{item['number']}</code> — {item['reason']}\n"
+            if len(current) + len(line) > 3800:
+                messages.append(current)
+                current = ""
+            current += line
+        messages.append(current)
+
+        # آخر رسالة بس بتاخد الأزرار عشان مايتكررش المنيو
+        for i, msg in enumerate(messages):
+            if i == len(messages) - 1:
+                await safe_edit(query, msg, parse_mode="HTML", reply_markup=main_menu_keyboard())
+            elif i == 0:
+                await safe_edit(query, msg, parse_mode="HTML")
+            else:
+                await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="HTML")
 
     elif data == "change_interval":
         await safe_edit(query, "⏱️ اختار كل قد إيه يفحص:", reply_markup=interval_keyboard())
