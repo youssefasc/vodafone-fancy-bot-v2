@@ -616,6 +616,14 @@ def main_menu_keyboard():
         [InlineKeyboardButton(f"⏱️ مدة الفحص: كل {interval} دقيقة", callback_data="change_interval")],
         [InlineKeyboardButton(pause_label, callback_data="toggle_pause")],
         [InlineKeyboardButton("ℹ️ حالة البوت", callback_data="status")],
+        [InlineKeyboardButton("🗑️ مسح كل الأرقام المخزنة", callback_data="clear_seen_confirm")],
+    ])
+
+
+def clear_seen_confirm_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ أيوة امسح", callback_data="clear_seen_yes"),
+         InlineKeyboardButton("❌ لأ رجّعني", callback_data="main_menu")],
     ])
 
 
@@ -788,6 +796,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"إجمالي أرقام محفوظة: {seen_sim + seen_esim} ({seen_sim} SIM + {seen_esim} eSIM)"
         )
         await safe_edit(query, msg, parse_mode="HTML", reply_markup=main_menu_keyboard())
+
+    elif data == "clear_seen_confirm":
+        with state_lock:
+            seen_sim = len(state.get("seen", {}).get("simcard", []))
+            seen_esim = len(state.get("seen", {}).get("esim", []))
+        msg = (
+            f"⚠️ <b>متأكد إنك عايز تمسح كل الأرقام المخزنة؟</b>\n\n"
+            f"هيتمسح {seen_sim + seen_esim} رقم ({seen_sim} SIM + {seen_esim} eSIM).\n\n"
+            f"بعد المسح، البوت هيعتبر كل الأرقام الموجودة على الموقع دلوقتي "
+            f"\"جديدة\" وهيبعتلك بيها تاني في أول فحص جاي."
+        )
+        await safe_edit(query, msg, parse_mode="HTML", reply_markup=clear_seen_confirm_keyboard())
+
+    elif data == "clear_seen_yes":
+        with state_lock:
+            state["seen"] = {"simcard": [], "esim": []}
+            save_state_sync(state)  # حفظ متزامن عشان المسح يفضل مؤكد حتى لو حصل redeploy فوراً
+        await safe_edit(
+            query,
+            "🗑️ تم مسح كل الأرقام المخزنة.\n\n"
+            "أول فحص جاي هيبعتلك كل الأرقام المميزة الموجودة على الموقع حالياً.",
+            reply_markup=main_menu_keyboard()
+        )
 
 
 async def cmd_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
