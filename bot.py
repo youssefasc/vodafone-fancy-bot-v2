@@ -21,6 +21,7 @@ from telegram.ext import (
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 CHAT_ID        = os.environ.get("CHAT_ID", "")
 STATE_FILE     = "bot_state.json"
+ADMIN_ID       = 6055994136  # اليوزر الوحيد المصرح له يتحكم في البوت
 
 DEFAULT_STATE = {
     "interval_minutes": 10,
@@ -474,7 +475,25 @@ def interval_keyboard():
     return InlineKeyboardMarkup(rows)
 
 
+def stranger_reply_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("💬 تواصل معايا", url="tg://user?id=6055994136")]
+    ])
+
+
+STRANGER_MESSAGE = (
+    "🤖 أهلاً بيك!\n\n"
+    "أنا بوت بصطاد الأرقام المميزة من موقع فودافون مصر، "
+    "وبنبّه أول ما ألاقي رقم مميز جديد عشان تشتريه فوراً.\n\n"
+    "البوت ده خاص وشغال لصاحبه بس. لو عايز تعرف أكتر أو حابب تطلب بوت زيه، "
+    "تواصل معايا من الزرار تحت 👇"
+)
+
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text(STRANGER_MESSAGE, reply_markup=stranger_reply_keyboard())
+        return
     await update.message.reply_text(
         "👋 أهلاً! أنا بوت أرقام فودافون المميزة.\n\n"
         "استخدم لوحة التحكم تحت عشان تتحكم فيا:",
@@ -482,23 +501,38 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def safe_edit(query, text, **kwargs):
+    """يعدل الرسالة، ويتجاهل بهدوء لو المحتوى نفس اللي موجود بالفعل"""
+    try:
+        await query.edit_message_text(text, **kwargs)
+    except Exception as e:
+        if "Message is not modified" not in str(e):
+            raise
+
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
     chat_id = query.message.chat_id
+    user_id = query.from_user.id
+
+    # ── حماية: بس الأدمن يقدر يستخدم الأزرار ──
+    if user_id != ADMIN_ID:
+        await query.answer("🚫 البوت ده خاص، تواصل مع الأدمن.", show_alert=True)
+        return
 
     if data == "main_menu":
-        await query.edit_message_text("📋 لوحة التحكم:", reply_markup=main_menu_keyboard())
+        await safe_edit(query, "📋 لوحة التحكم:", reply_markup=main_menu_keyboard())
 
     elif data == "scan_now":
         with state_lock:
             already_running = state.get("running", False)
         if already_running:
-            await query.edit_message_text("⏳ في فحص شغال بالفعل دلوقتي، استنى يخلص.",
+            await safe_edit(query, "⏳ في فحص شغال بالفعل دلوقتي، استنى يخلص.",
                                             reply_markup=main_menu_keyboard())
             return
-        await query.edit_message_text("🚀 بدأت الفحص... هياخد دقيقة لدقيقتين، هبعتلك النتيجة أول ما يخلص.")
+        await safe_edit(query, "🚀 بدأت الفحص... هياخد دقيقة لدقيقتين، هبعتلك النتيجة أول ما يخلص.")
         current_loop = asyncio.get_running_loop()
         threading.Thread(target=run_scan, kwargs={
             "bot": context.bot, "manual": True, "chat_id": chat_id, "loop": current_loop
@@ -509,7 +543,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             last_run = state.get("last_run")
             result = state.get("last_result", {})
         if not last_run:
-            await query.edit_message_text("مفيش فحص اتعمل لسه.", reply_markup=main_menu_keyboard())
+            await safe_edit(query, "مفيش فحص اتعمل لسه.", reply_markup=main_menu_keyboard())
             return
         dt = datetime.fromisoformat(last_run)
         msg = f"📊 <b>آخر فحص:</b> {dt.strftime('%Y-%m-%d %H:%M UTC')}\n\n"
@@ -523,17 +557,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg += f"  ├ <code>{item['number']}</code> — {item['reason']}\n"
         else:
             msg += "🔍 مفيش أرقام مميزة جديدة في آخر فحص."
-        await query.edit_message_text(msg, parse_mode="HTML", reply_markup=main_menu_keyboard())
+        await safe_edit(query, msg, parse_mode="HTML", reply_markup=main_menu_keyboard())
 
     elif data == "change_interval":
-        await query.edit_message_text("⏱️ اختار كل قد إيه يفحص:", reply_markup=interval_keyboard())
+        await safe_edit(query, "⏱️ اختار كل قد إيه يفحص:", reply_markup=interval_keyboard())
 
     elif data.startswith("set_interval_"):
         minutes = int(data.replace("set_interval_", ""))
         with state_lock:
             state["interval_minutes"] = minutes
             save_state(state)
-        await query.edit_message_text(f"✅ تم! هيفحص كل {minutes} دقيقة من دلوقتي.",
+        await safe_edit(query, f"✅ تم! هيفحص كل {minutes} دقيقة من دلوقتي.",
                                         reply_markup=main_menu_keyboard())
 
     elif data == "toggle_pause":
@@ -542,7 +576,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             paused = state["paused"]
             save_state(state)
         msg = "⏸️ تم إيقاف الفحص التلقائي مؤقتاً." if paused else "▶️ تم استكمال الفحص التلقائي."
-        await query.edit_message_text(msg, reply_markup=main_menu_keyboard())
+        await safe_edit(query, msg, reply_markup=main_menu_keyboard())
 
     elif data == "status":
         with state_lock:
@@ -561,10 +595,24 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"آخر فحص: {last_run_str}\n"
             f"إجمالي أرقام محفوظة: {seen_sim + seen_esim} ({seen_sim} SIM + {seen_esim} eSIM)"
         )
-        await query.edit_message_text(msg, parse_mode="HTML", reply_markup=main_menu_keyboard())
+        await safe_edit(query, msg, parse_mode="HTML", reply_markup=main_menu_keyboard())
 
 
 async def cmd_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text(STRANGER_MESSAGE, reply_markup=stranger_reply_keyboard())
+        return
+    await update.message.reply_text("📋 لوحة التحكم:", reply_markup=main_menu_keyboard())
+
+
+async def handle_any_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """أي رسالة تانية (مش أمر معروف) - لو مش الأدمن يرد برسالة التعريف"""
+    if not update.message:
+        return
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text(STRANGER_MESSAGE, reply_markup=stranger_reply_keyboard())
+        return
+    # لو الأدمن كتب حاجة مش أمر، رجّعله لوحة التحكم
     await update.message.reply_text("📋 لوحة التحكم:", reply_markup=main_menu_keyboard())
 
 
@@ -601,6 +649,7 @@ def main():
     application.add_handler(CommandHandler("start", cmd_start))
     application.add_handler(CommandHandler("menu", cmd_menu))
     application.add_handler(CallbackQueryHandler(button_handler))
+    application.add_handler(MessageHandler(filters.ALL, handle_any_message))
 
     print("🤖 البوت شغال...", flush=True)
     # ملحوظة: drop_pending_updates بيتجاهل أي updates قديمة متراكمة وقت الانقطاع
