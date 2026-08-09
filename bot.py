@@ -5,8 +5,11 @@ Vodafone Fancy Numbers Bot - v2
 import os
 import json
 import time
+import base64
 import asyncio
 import threading
+import urllib.request
+import urllib.error
 from datetime import datetime, timezone
 from collections import Counter
 
@@ -23,6 +26,11 @@ CHAT_ID        = os.environ.get("CHAT_ID", "")
 STATE_FILE     = "bot_state.json"
 ADMIN_ID       = 6055994136  # اليوزر الوحيد المصرح له يتحكم في البوت
 
+# ── تخزين الحالة بشكل دائم على GitHub (عشان Railway بيمسح الملفات المحلية مع كل redeploy) ──
+GH_TOKEN = os.environ.get("GH_STATE_TOKEN", "")
+GH_REPO  = os.environ.get("GH_STATE_REPO", "youssefasc/vodafone-fancy-bot-v2")
+GH_STATE_PATH = "bot_state.json"
+
 DEFAULT_STATE = {
     "interval_minutes": 10,
     "last_run": None,
@@ -35,7 +43,70 @@ DEFAULT_STATE = {
 state_lock = threading.Lock()
 
 
+def _gh_request(method, url, data=None):
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Authorization", f"token {GH_TOKEN}")
+    req.add_header("Accept", "application/vnd.github+json")
+    req.add_header("User-Agent", "vodafone-bot")
+    if data:
+        req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read())
+
+
+def load_state_from_github():
+    """يجيب الحالة المحفوظة من GitHub (بتفضل موجودة حتى بعد أي redeploy)"""
+    if not GH_TOKEN:
+        return None
+    try:
+        url = f"https://api.github.com/repos/{GH_REPO}/contents/{GH_STATE_PATH}"
+        result = _gh_request("GET", url)
+        content = base64.b64decode(result["content"]).decode()
+        loaded = json.loads(content)
+        return {**DEFAULT_STATE, **loaded}
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            print("ℹ️ مفيش ملف حالة على GitHub لسه (أول مرة) - هيتعمل جديد", flush=True)
+        else:
+            print(f"⚠️ فشل تحميل الحالة من GitHub: {e}", flush=True)
+        return None
+    except Exception as e:
+        print(f"⚠️ فشل تحميل الحالة من GitHub: {e}", flush=True)
+        return None
+
+
+def save_state_to_github(state_data):
+    """يرفع الحالة الحالية على GitHub عشان تفضل محفوظة حتى بعد أي redeploy"""
+    if not GH_TOKEN:
+        return
+    try:
+        content = json.dumps(state_data, ensure_ascii=False, indent=2)
+        encoded = base64.b64encode(content.encode()).decode()
+
+        url = f"https://api.github.com/repos/{GH_REPO}/contents/{GH_STATE_PATH}"
+        sha = None
+        try:
+            existing = _gh_request("GET", url)
+            sha = existing.get("sha")
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+
+        payload = {"message": "Update bot state", "content": encoded}
+        if sha:
+            payload["sha"] = sha
+
+        _gh_request("PUT", url, data=json.dumps(payload).encode())
+    except Exception as e:
+        print(f"⚠️ فشل حفظ الحالة على GitHub: {e}", flush=True)
+
+
 def load_state():
+    # أولوية للحالة المحفوظة على GitHub (دائمة)، وإلا نجرب الملف المحلي، وإلا حالة افتراضية
+    github_state = load_state_from_github()
+    if github_state is not None:
+        return github_state
+
     if os.path.exists(STATE_FILE):
         try:
             with open(STATE_FILE) as f:
@@ -48,8 +119,18 @@ def load_state():
 
 
 def save_state(state):
+    # نحفظ محلياً فوراً (سريع) ونرفع على GitHub في الخلفية (دائم، مش حرج التوقيت)
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
+    threading.Thread(target=save_state_to_github, args=(dict(state),), daemon=True).start()
+
+
+def save_state_sync(state):
+    """زي save_state بس بتستنى رفع GitHub يخلص فعلاً - تستخدم بعد لحظات حرجة
+    (زي تحديث الأرقام المشوفة) عشان نضمن الحفظ قبل أي redeploy محتمل."""
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+    save_state_to_github(dict(state))
 
 
 state = load_state()
@@ -421,7 +502,7 @@ def run_scan(bot=None, manual=False, chat_id=None, loop=None):
                 "fancy_esim": new_fancy["esim"],
             }
             state["running"] = False
-            save_state(state)
+            save_state_sync(state)  # حفظ متزامن هنا عشان الأرقام المشوفة تفضل محفوظة أكيد
 
         # ابعت رسالة/رسائل تيليجرام
         target_chat = chat_id or CHAT_ID
