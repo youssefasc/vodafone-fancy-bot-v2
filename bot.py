@@ -390,26 +390,46 @@ def scrape_numbers(page, line_type: str, log) -> list[dict]:
     if found.get("found"):
         last_h = 0
         no_growth = 0
-        for i in range(150):
+        for i in range(300):  # حد أقصى أعلى بكتير عشان مايوقفش بدري
             prev_count = len(results)
             info = page.evaluate(scroll_and_measure_js)
             new_h = info.get("scrollHeight", last_h)
-            time.sleep(0.6)
+            time.sleep(0.8)
             collect()
+
             if new_h <= last_h and len(results) == prev_count:
-                time.sleep(1.5)
+                # مفيش تغيير أول مرة - ننتظر أكتر (الموقع ممكن يكون بطيء في التحميل)
+                time.sleep(2.5)
                 info2 = page.evaluate(scroll_and_measure_js)
                 new_h = max(new_h, info2.get("scrollHeight", new_h))
                 collect()
+
             grew = new_h > last_h
             got_new = len(results) > prev_count
+
             if not grew and not got_new:
                 no_growth += 1
                 if no_growth >= 5:
-                    break
+                    # قبل ما نستسلم فعلياً، ننتظر فترة أطول جداً كفرصة أخيرة
+                    # (بعض الأحيان السيرفر بطيء لدرجة إن 5 محاولات عادية مش كفاية)
+                    log(f"   ⏳ {no_growth} محاولات فاضية - بستنى فترة أطول كفرصة أخيرة...")
+                    time.sleep(6)
+                    info3 = page.evaluate(scroll_and_measure_js)
+                    final_h = info3.get("scrollHeight", new_h)
+                    collect()
+                    if final_h > new_h or len(results) > prev_count:
+                        no_growth = 0  # لقينا حاجة جديدة - نكمل
+                        last_h = max(last_h, final_h)
+                        continue
+                    if no_growth >= 8:  # لو لسه مفيش حاجة بعد كل المحاولات دي، دلوقتي نوقف فعلاً
+                        log(f"   ⏹️  توقف الـ scroll فعلياً بعد {i+1} محاولة (اتأكدنا إننا وصلنا للنهاية)")
+                        break
             else:
                 no_growth = 0
                 last_h = max(last_h, new_h)
+
+            if (i + 1) % 20 == 0:
+                log(f"   📊 {line_type}: لسه بيسكرول ({i+1} دورة، {len(results)} رقم لحد دلوقتي)")
     else:
         for i in range(20):
             prev = len(results)
