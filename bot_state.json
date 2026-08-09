@@ -1,0 +1,16 @@
+{
+  "interval_minutes": 10,
+  "last_run": null,
+  "last_result": {
+    "simcard": 0,
+    "esim": 0,
+    "fancy_simcard": [],
+    "fancy_esim": []
+  },
+  "seen": {
+    "simcard": [],
+    "esim": []
+  },
+  "running": true,
+  "paused": false
+}
