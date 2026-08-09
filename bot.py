@@ -58,87 +58,118 @@ state = load_state()
 # ═══════════════════════════════════════════════════════════
 # منطق تحديد الأرقام المميزة
 # ═══════════════════════════════════════════════════════════
-def is_fancy(number: str) -> dict:
-    d = number[-8:]
+def _check_pattern_in_window(w: str, is_tail: bool = False) -> str | None:
+    """يفحص نافذة أرقام (substring) وبيرجع سبب لو لقى نمط مميز جواها، أو None لو مفيش.
+    is_tail: النافذة دي هي فعلاً آخر أرقام الرقم (تسمح بتكرار من 3 أرقام بس هنا)."""
+    n = len(w)
 
-    # 1. متكررة كلها: 11111111
-    if len(set(d)) == 1:
-        return {"fancy": True, "reason": "متكررة كلها 🔥"}
+    # كل الأرقام في النافذة متطابقة: 0000 / 7777 (أو 3 أرقام لو في آخر الرقم فعلاً: 777)
+    min_repeat = 3 if is_tail else 4
+    if len(set(w)) == 1 and n >= min_repeat:
+        return f"متكررة ({w}) 🔥"
 
-    # 2. متسلسلة تصاعدي كاملة: 12345678
-    if all(int(d[i]) - int(d[i-1]) == 1 for i in range(1, len(d))):
-        return {"fancy": True, "reason": "متسلسلة تصاعدي ⬆️"}
+    # متسلسلة تصاعدي كاملة: 1234 / 34567
+    if n >= 4 and all(int(w[i]) - int(w[i-1]) == 1 for i in range(1, n)):
+        return f"متسلسلة تصاعدي ({w}) ⬆️"
 
-    # 3. متسلسلة تنازلي كاملة: 87654321
-    if all(int(d[i-1]) - int(d[i]) == 1 for i in range(1, len(d))):
-        return {"fancy": True, "reason": "متسلسلة تنازلي ⬇️"}
+    # متسلسلة تنازلي كاملة: 4321 / 76543
+    if n >= 4 and all(int(w[i-1]) - int(w[i]) == 1 for i in range(1, n)):
+        return f"متسلسلة تنازلي ({w}) ⬇️"
 
-    # 4. نصف الرقم زي النص التاني بالظبط: 12341234
-    if d[:4] == d[4:]:
-        return {"fancy": True, "reason": "نصف متكرر 🔁"}
+    # نص النافذة زي نصها التاني بالظبط (لازم زوجي الطول): 12341234 / 70707070
+    if n >= 6 and n % 2 == 0:
+        half = n // 2
+        if w[:half] == w[half:]:
+            return f"نصف متكرر ({w[:half]}-{w[half:]}) 🔁"
 
-    # 5. أول 4 أرقام كلهم نفس الرقم: 11112345
-    if len(set(d[:4])) == 1:
-        return {"fancy": True, "reason": "أول 4 متكررة ✨"}
+    return None
 
-    # 6. آخر 4 أرقام كلهم نفس الرقم: 12345555
-    if len(set(d[4:])) == 1:
-        return {"fancy": True, "reason": "آخر 4 متكررة ✨"}
 
-    # 7. آخر 3 أرقام كلهم نفس الرقم: 1700777 / 1800888
-    if len(set(d[-3:])) == 1:
-        return {"fancy": True, "reason": "آخر 3 متكررة 🔢"}
+def _check_group_patterns(d: str) -> str | None:
+    """يفحص أنماط المجموعات (3-3 / 3-3-2 / 4-4 / 2-2-2-2) جوه نافذة أرقام معينة"""
+    n = len(d)
 
-    # 8. الرقم كله من رقمين بس متبادلين: 10101010
-    if len(set(d)) <= 2:
-        return {"fancy": True, "reason": "رقمين فريدين فقط 💎"}
-
-    # ── أنماط المجموعات (لازم تكون مجموعات كاملة منظمة، مش صدفة) ──
-    d6 = d[-6:]
-    if len(d6) == 6:
-        g1, g2 = int(d6[:3]), int(d6[3:])
+    # مجموعتين من 3 أرقام: فرق ثابت (700-600) أو تضاعف (100-200) أو تطابق (700-700)
+    if n == 6:
+        g1, g2 = int(d[:3]), int(d[3:])
         diff = g2 - g1
-        # مجموعتين من 3 أرقام بفرق ثابت 100 بالظبط (700-600 / 100-200): تسلسل حقيقي
-        if diff != 0 and abs(diff) % 100 == 0 and g1 >= 0 and g2 >= 0:
+        if diff != 0 and abs(diff) % 100 == 0:
             arrow = "⬆️" if diff > 0 else "⬇️"
-            return {"fancy": True, "reason": f"مجموعتين متسلسلتين ({d6[:3]}-{d6[3:]}) {arrow}"}
-        # مجموعتين تضاعف بعض: 100-200 / 111-222
+            return f"مجموعتين متسلسلتين ({d[:3]}-{d[3:]}) {arrow}"
         if g1 > 0 and g2 == g1 * 2:
-            return {"fancy": True, "reason": f"مجموعتين مضاعفة ({d6[:3]}-{d6[3:]}) ✖️"}
-        # مجموعتين متطابقتين بالظبط: 700-700
+            return f"مجموعتين مضاعفة ({d[:3]}-{d[3:]}) ✖️"
         if g1 == g2 and g1 > 0:
-            return {"fancy": True, "reason": f"مجموعتين متطابقتين ({d6[:3]}-{d6[3:]}) 🔁"}
+            return f"مجموعتين متطابقتين ({d[:3]}-{d[3:]}) 🔁"
 
-    d8 = d[-8:]
-    if len(d8) == 8:
-        g1, g2 = int(d8[:4]), int(d8[4:])
+    # مجموعتين من 4 أرقام بفرق ثابت: 1000-2000
+    if n == 8:
+        g1, g2 = int(d[:4]), int(d[4:])
         diff = g2 - g1
-        if diff != 0 and abs(diff) % 1000 == 0 and g1 >= 0 and g2 >= 0:
+        if diff != 0 and abs(diff) % 1000 == 0:
             arrow = "⬆️" if diff > 0 else "⬇️"
-            return {"fancy": True, "reason": f"مجموعتين متسلسلتين ({d8[:4]}-{d8[4:]}) {arrow}"}
+            return f"مجموعتين متسلسلتين ({d[:4]}-{d[4:]}) {arrow}"
 
-    # 3 مجموعات (3-3-2) بفرق ثابت بين أول مجموعتين: 700-600-50 / 200-300-40
-    if len(d) == 8:
+    # 3 مجموعات (3-3-2): فرق ثابت بين أول مجموعتين: 700-600-50
+    if n == 8:
         g1, g2, g3 = d[0:3], d[3:6], d[6:8]
         n1, n2 = int(g1), int(g2)
         diff = n1 - n2
         if diff != 0 and abs(diff) % 100 == 0:
-            return {"fancy": True, "reason": f"نمط ({g1}-{g2}-{g3}) 🎯"}
+            return f"نمط ({g1}-{g2}-{g3}) 🎯"
 
-    # مجموعات من رقمين متتالية تصاعدي/تنازلي بفرق ثابت: 20-30-40-50 / 10-20-30-40
-    quads = [d[i:i+2] for i in range(0, 8, 2)]
-    quad_nums = [int(q) for q in quads]
-    diffs = [quad_nums[i+1] - quad_nums[i] for i in range(3)]
-    if len(set(diffs)) == 1 and diffs[0] != 0 and abs(diffs[0]) % 10 == 0:
-        arrow = "⬆️" if diffs[0] > 0 else "⬇️"
-        return {"fancy": True, "reason": f"مجموعات متتالية ({'-'.join(quads)}) {arrow}"}
+    # مجموعات من رقمين (4 مجموعات): متتالية بفرق ثابت أو متكررة بالكامل
+    if n == 8:
+        quads = [d[i:i+2] for i in range(0, 8, 2)]
+        quad_nums = [int(q) for q in quads]
+        diffs = [quad_nums[i+1] - quad_nums[i] for i in range(3)]
+        if len(set(diffs)) == 1 and diffs[0] != 0 and abs(diffs[0]) % 10 == 0:
+            arrow = "⬆️" if diffs[0] > 0 else "⬇️"
+            return f"مجموعات متتالية ({'-'.join(quads)}) {arrow}"
+        if len(set(quads)) == 1:
+            return f"مجموعات متكررة ({'-'.join(quads)}) 🔁"
 
-    # مجموعات من رقمين متكررة بالكامل (كل الأربع مجموعات نفس القيمة): 70-70-70-70
-    if len(set(quads)) == 1:
-        return {"fancy": True, "reason": f"مجموعات متكررة ({'-'.join(quads)}) 🔁"}
+    return None
+
+
+def is_fancy(number: str) -> dict:
+    """
+    يفحص جسم الرقم (آخر 8 أرقام بعد كود الشبكة 010/011/012/015) عن أي نمط مميز
+    جوه أي جزء منه: البداية، النص، أو النهاية - مش بس آخره.
+    كود الشبكة نفسه (أول 3 أرقام) مستبعد من الفحص عشان مايلخبطش النتيجة.
+    """
+    full = number.strip()
+    # جسم الرقم الحقيقي: آخر 8 أرقام (بعد كود الشبكة 010/011/012/015)
+    d = full[-8:]
+    if len(d) < 8:
+        return {"fancy": False}
+
+    # ── 1) فحص التكرار/التسلسل/النصف المتكرر في أي نافذة من 3 لـ 8 أرقام جوه جسم الرقم ──
+    best_match = None
+    best_len = 0
+    for window_len in range(8, 2, -1):  # نبدأ بأطول نافذة عشان أقوى نمط يتلقط الأول
+        for start in range(0, len(d) - window_len + 1):
+            w = d[start:start + window_len]
+            is_tail = (start + window_len == len(d))  # النافذة دي بتوصل لآخر الرقم فعلاً
+            reason = _check_pattern_in_window(w, is_tail=is_tail)
+            if reason and window_len > best_len:
+                best_match = reason
+                best_len = window_len
+    if best_match:
+        return {"fancy": True, "reason": best_match}
+
+    # ── 2) فحص أنماط المجموعات (3-3 / 3-3-2 / 4-4 / 2-2-2-2) في نافذة 6 أو 8 من جسم الرقم ──
+    for window_len in (8, 6):
+        for start in range(0, len(d) - window_len + 1):
+            w = d[start:start + window_len]
+            reason = _check_group_patterns(w)
+            if reason:
+                return {"fancy": True, "reason": reason}
+
+    # ── 3) جسم الرقم بالكامل من رقمين فريدين بس: 10101010 ──
+    if len(set(d)) <= 2:
+        return {"fancy": True, "reason": f"رقمين فريدين فقط ({d}) 💎"}
 
     return {"fancy": False}
-
 
 # ═══════════════════════════════════════════════════════════
 # السكرابينج
