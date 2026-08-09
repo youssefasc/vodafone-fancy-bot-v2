@@ -166,45 +166,60 @@ def _check_pattern_in_window(w: str, is_tail: bool = False) -> str | None:
     return None
 
 
+def _is_true_sequence(nums: list, allowed_steps: tuple = (1, 10, 100, 1000)) -> tuple:
+    """يتأكد إن الأرقام دي تسلسل حقيقي (كل رقم = اللي قبله + خطوة ثابتة من allowed_steps)
+    يرجع (True, step) لو تسلسل حقيقي، وإلا (False, None)"""
+    if len(nums) < 2:
+        return False, None
+    diffs = [nums[i+1] - nums[i] for i in range(len(nums)-1)]
+    if len(set(diffs)) != 1:
+        return False, None
+    step = diffs[0]
+    if step == 0:
+        return False, None
+    if abs(step) in allowed_steps:
+        return True, step
+    return False, None
+
+
 def _check_group_patterns(d: str) -> str | None:
-    """يفحص أنماط المجموعات (3-3 / 3-3-2 / 4-4 / 2-2-2-2) جوه نافذة أرقام معينة"""
+    """يفحص أنماط المجموعات - بس تسلسل رقمي حقيقي (زي 100-200-300 أو 10-20-30)
+    مش أي فرق عشوائي بين مجموعتين"""
     n = len(d)
 
-    # مجموعتين من 3 أرقام: فرق ثابت (700-600) أو تضاعف (100-200) أو تطابق (700-700)
+    # مجموعتين من 3 أرقام: تسلسل حقيقي بخطوة 10 أو 100 (700-800) أو تطابق كامل (700-700)
     if n == 6:
         g1, g2 = int(d[:3]), int(d[3:])
-        diff = g2 - g1
-        if diff != 0 and abs(diff) % 100 == 0:
-            arrow = "⬆️" if diff > 0 else "⬇️"
+        is_seq, step = _is_true_sequence([g1, g2], allowed_steps=(10, 100))
+        if is_seq:
+            arrow = "⬆️" if step > 0 else "⬇️"
             return f"مجموعتين متسلسلتين ({d[:3]}-{d[3:]}) {arrow}"
-        if g1 > 0 and g2 == g1 * 2:
-            return f"مجموعتين مضاعفة ({d[:3]}-{d[3:]}) ✖️"
         if g1 == g2 and g1 > 0:
             return f"مجموعتين متطابقتين ({d[:3]}-{d[3:]}) 🔁"
 
-    # مجموعتين من 4 أرقام بفرق ثابت: 1000-2000
+    # مجموعتين من 4 أرقام: تسلسل حقيقي (1000-2000 بخطوة 1000، أو 1234-1235 بخطوة 1)
     if n == 8:
         g1, g2 = int(d[:4]), int(d[4:])
-        diff = g2 - g1
-        if diff != 0 and abs(diff) % 1000 == 0:
-            arrow = "⬆️" if diff > 0 else "⬇️"
+        is_seq, step = _is_true_sequence([g1, g2])
+        if is_seq:
+            arrow = "⬆️" if step > 0 else "⬇️"
             return f"مجموعتين متسلسلتين ({d[:4]}-{d[4:]}) {arrow}"
 
-    # 3 مجموعات (3-3-2): فرق ثابت بين أول مجموعتين: 700-600-50
+    # 3 مجموعات (3-3-2): تسلسل حقيقي بين أول مجموعتين بخطوة 10 أو 100: 100-200 / 700-600
     if n == 8:
         g1, g2, g3 = d[0:3], d[3:6], d[6:8]
         n1, n2 = int(g1), int(g2)
-        diff = n1 - n2
-        if diff != 0 and abs(diff) % 100 == 0:
+        is_seq, step = _is_true_sequence([n1, n2], allowed_steps=(10, 100))
+        if is_seq:
             return f"نمط ({g1}-{g2}-{g3}) 🎯"
 
-    # مجموعات من رقمين (4 مجموعات): متتالية بفرق ثابت أو متكررة بالكامل
+    # مجموعات من رقمين (4 مجموعات): تسلسل حقيقي (10-20-30-40) أو تطابق كامل
     if n == 8:
         quads = [d[i:i+2] for i in range(0, 8, 2)]
         quad_nums = [int(q) for q in quads]
-        diffs = [quad_nums[i+1] - quad_nums[i] for i in range(3)]
-        if len(set(diffs)) == 1 and diffs[0] != 0 and abs(diffs[0]) % 10 == 0:
-            arrow = "⬆️" if diffs[0] > 0 else "⬇️"
+        is_seq, step = _is_true_sequence(quad_nums)
+        if is_seq:
+            arrow = "⬆️" if step > 0 else "⬇️"
             return f"مجموعات متتالية ({'-'.join(quads)}) {arrow}"
         if len(set(quads)) == 1:
             return f"مجموعات متكررة ({'-'.join(quads)}) 🔁"
@@ -238,13 +253,11 @@ def is_fancy(number: str) -> dict:
     if best_match:
         return {"fancy": True, "reason": best_match}
 
-    # ── 2) فحص أنماط المجموعات (3-3 / 3-3-2 / 4-4 / 2-2-2-2) في نافذة 6 أو 8 من جسم الرقم ──
-    for window_len in (8, 6):
-        for start in range(0, len(d) - window_len + 1):
-            w = d[start:start + window_len]
-            reason = _check_group_patterns(w)
-            if reason:
-                return {"fancy": True, "reason": reason}
+    # ── 2) فحص أنماط المجموعات (3-3-2 / 4-4 / 2-2-2-2) على تقسيم الرقم الطبيعي بس ──
+    # (مش أي نافذة فرعية عشوائية - عشان منمسكش أرقام زي "447-448" اللي طالعة بالصدفة من نص الرقم)
+    reason = _check_group_patterns(d)
+    if reason:
+        return {"fancy": True, "reason": reason}
 
     # ── 3) جسم الرقم بالكامل من رقمين فريدين بس: 10101010 ──
     if len(set(d)) <= 2:
