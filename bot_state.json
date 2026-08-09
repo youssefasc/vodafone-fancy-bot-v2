@@ -11,6 +11,6 @@
     "simcard": [],
     "esim": []
   },
-  "running": false,
+  "running": true,
   "paused": false
 }
