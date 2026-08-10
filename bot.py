@@ -38,6 +38,7 @@ DEFAULT_STATE = {
     "seen": {"simcard": [], "esim": []},
     "running": False,
     "paused": False,
+    "stranger_alerts": True,  # ينبه الأدمن لو حد غيره بعت للبوت
 }
 
 state_lock = threading.Lock()
@@ -669,12 +670,15 @@ def main_menu_keyboard():
     with state_lock:
         paused = state.get("paused", False)
         interval = state.get("interval_minutes", 10)
+        alerts_on = state.get("stranger_alerts", True)
     pause_label = "▶️ استكمال الفحص" if paused else "⏸️ إيقاف الفحص مؤقتاً"
+    alerts_label = "🔕 إيقاف تنبيه الغرباء" if alerts_on else "🔔 تشغيل تنبيه الغرباء"
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔍 افحص دلوقتي", callback_data="scan_now")],
         [InlineKeyboardButton("📊 آخر نتيجة", callback_data="last_result")],
         [InlineKeyboardButton(f"⏱️ مدة الفحص: كل {interval} دقيقة", callback_data="change_interval")],
         [InlineKeyboardButton(pause_label, callback_data="toggle_pause")],
+        [InlineKeyboardButton(alerts_label, callback_data="toggle_stranger_alerts")],
         [InlineKeyboardButton("ℹ️ حالة البوت", callback_data="status")],
         [InlineKeyboardButton("🗑️ مسح كل الأرقام المخزنة", callback_data="clear_seen_confirm")],
     ])
@@ -722,18 +726,43 @@ STRANGER_MESSAGE_NO_BUTTON = STRANGER_MESSAGE.replace(
 )
 
 
-async def reply_to_stranger(message):
-    """يرد على أي حد مش الأدمن، مع fallback لو زرار الـ deep link فشل"""
+async def reply_to_stranger(message, context=None):
+    """يرد على أي حد مش الأدمن، مع fallback لو زرار الـ deep link فشل، وينبه الأدمن لو الإعداد مفعّل"""
     try:
         await message.reply_text(STRANGER_MESSAGE, reply_markup=stranger_reply_keyboard())
     except Exception:
         # لو فشل الزرار (مثلاً بسبب خصوصية المستخدم) نبعت من غير زرار
         await message.reply_text(STRANGER_MESSAGE_NO_BUTTON)
 
+    # ── تنبيه الأدمن لو الإعداد مفعّل ──
+    with state_lock:
+        alerts_on = state.get("stranger_alerts", True)
+    if not alerts_on or not context:
+        return
+
+    user = message.from_user
+    name = " ".join(filter(None, [user.first_name, user.last_name])) or "بدون اسم"
+    username_part = f"@{user.username}" if user.username else "(بدون يوزرنيم)"
+    text_preview = (message.text or message.caption or "[رسالة من غير نص]").strip()
+    if len(text_preview) > 300:
+        text_preview = text_preview[:300] + "…"
+
+    alert_msg = (
+        f"🔔 <b>حد غير الأدمن بعت للبوت!</b>\n\n"
+        f"👤 الاسم: {name}\n"
+        f"🔗 اليوزر: {username_part}\n"
+        f"🆔 الـID: <code>{user.id}</code>\n\n"
+        f"💬 الرسالة:\n{text_preview}"
+    )
+    try:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=alert_msg, parse_mode="HTML")
+    except Exception as e:
+        print(f"⚠️ فشل إرسال تنبيه الغريب: {e}", flush=True)
+
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
-        await reply_to_stranger(update.message)
+        await reply_to_stranger(update.message, context)
         return
     await update.message.reply_text(
         "👋 أهلاً! أنا بوت أرقام فودافون المميزة.\n\n"
@@ -838,6 +867,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = "⏸️ تم إيقاف الفحص التلقائي مؤقتاً." if paused else "▶️ تم استكمال الفحص التلقائي."
         await safe_edit(query, msg, reply_markup=main_menu_keyboard())
 
+    elif data == "toggle_stranger_alerts":
+        with state_lock:
+            state["stranger_alerts"] = not state.get("stranger_alerts", True)
+            alerts_on = state["stranger_alerts"]
+            save_state(state)
+        msg = (
+            "🔔 تم تشغيل تنبيه الغرباء - هتوصلك رسالة لو حد غيرك بعت للبوت."
+            if alerts_on else
+            "🔕 تم إيقاف تنبيه الغرباء - مش هتوصلك رسائل لو حد غيرك بعت للبوت."
+        )
+        await safe_edit(query, msg, reply_markup=main_menu_keyboard())
+
     elif data == "status":
         with state_lock:
             paused = state.get("paused", False)
@@ -846,13 +887,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             last_run = state.get("last_run")
             seen_sim = len(state.get("seen", {}).get("simcard", []))
             seen_esim = len(state.get("seen", {}).get("esim", []))
+            alerts_on = state.get("stranger_alerts", True)
         status_line = "🟡 بيفحص دلوقتي" if running else ("⏸️ متوقف مؤقتاً" if paused else "🟢 شغال")
         last_run_str = datetime.fromisoformat(last_run).strftime('%Y-%m-%d %H:%M UTC') if last_run else "لسه مفيش"
+        alerts_line = "🔔 شغال" if alerts_on else "🔕 متوقف"
         msg = (
             f"ℹ️ <b>حالة البوت:</b>\n\n"
             f"الحالة: {status_line}\n"
             f"مدة الفحص: كل {interval} دقيقة\n"
             f"آخر فحص: {last_run_str}\n"
+            f"تنبيه الغرباء: {alerts_line}\n"
             f"إجمالي أرقام محفوظة: {seen_sim + seen_esim} ({seen_sim} SIM + {seen_esim} eSIM)"
         )
         await safe_edit(query, msg, parse_mode="HTML", reply_markup=main_menu_keyboard())
@@ -883,7 +927,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
-        await reply_to_stranger(update.message)
+        await reply_to_stranger(update.message, context)
         return
     await update.message.reply_text("📋 لوحة التحكم:", reply_markup=main_menu_keyboard())
 
@@ -893,7 +937,7 @@ async def handle_any_message(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not update.message:
         return
     if update.effective_user.id != ADMIN_ID:
-        await reply_to_stranger(update.message)
+        await reply_to_stranger(update.message, context)
         return
     # لو الأدمن كتب حاجة مش أمر، رجّعله لوحة التحكم
     await update.message.reply_text("📋 لوحة التحكم:", reply_markup=main_menu_keyboard())
