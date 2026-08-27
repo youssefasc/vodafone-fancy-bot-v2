@@ -8,6 +8,7 @@ import time
 import base64
 import asyncio
 import threading
+from concurrent.futures import ThreadPoolExecutor
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
@@ -42,6 +43,10 @@ DEFAULT_STATE = {
 }
 
 state_lock = threading.Lock()
+# thread pool محدود (2 workers بس) للحفظ في الخلفية - بدل ما نفتح threading.Thread
+# جديدة من غير حد كل مرة، وده اللي كان بيسبب "RuntimeError: can't start new thread"
+# بعد فترة طويلة من التشغيل
+_bg_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="bg-save")
 
 
 def _gh_request(method, url, data=None):
@@ -123,7 +128,8 @@ def save_state(state):
     # نحفظ محلياً فوراً (سريع) ونرفع على GitHub في الخلفية (دائم، مش حرج التوقيت)
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
-    threading.Thread(target=save_state_to_github, args=(dict(state),), daemon=True).start()
+    # نستخدم الـ pool المحدود بدل ما نفتح thread جديدة من غير حد
+    _bg_executor.submit(save_state_to_github, dict(state))
 
 
 def save_state_sync(state):
